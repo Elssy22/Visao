@@ -1,0 +1,51 @@
+# Visao - Docker Compose pour le développement local
+
+version: '3.8'
+
+services:
+  # Base de données PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: visao-postgres
+    environment:
+      POSTGRES_USER: visao
+      POSTGRES_PASSWORD: visao_dev_password
+      POSTGRES_DB: visao
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visao"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis pour cache et queue BullMQ
+  redis:
+    image: redis:7-alpine
+    container_name: visao-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Browserless pour le scraping (optionnel)
+  # Décommenter si besoin de scraper Instagram/TikTok
+  # browserless:
+  #   image: browserless/chrome:latest
+  #   container_name: visao-browserless
+  #   environment:
+  #     MAX_CONCURRENT_SESSIONS: 5
+  #     CONNECTION_TIMEOUT: 60000
+  #   ports:
+  #     - "3030:3000"
+
+volumes:
+  postgres_data:
+  redis_data:

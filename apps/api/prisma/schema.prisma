@@ -1,0 +1,236 @@
+// Visao - Schema Prisma
+// Base de données PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== UTILISATEURS ====================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          UserRole  @default(EDITOR)
+  avatar        String?
+
+  // Relations
+  sources           Source[]
+  alerts            Alert[]
+  savedContents     SavedContent[]
+  publications      Publication[]
+  pushSubscriptions PushSubscription[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  keys      Json     // { p256dh, auth }
+  userAgent String?
+
+  createdAt DateTime @default(now())
+}
+
+// ==================== SOURCES ====================
+
+model Source {
+  id            String      @id @default(cuid())
+  name          String
+  type          SourceType
+  url           String      // URL ou identifiant (@username, etc.)
+  identifier    String?     // ID spécifique à la plateforme
+  isActive      Boolean     @default(true)
+  checkInterval Int         @default(60) // Intervalle en secondes
+  lastCheckedAt DateTime?
+
+  // Métadonnées de la source
+  metadata      Json?       // Avatar, bio, followers, etc.
+
+  // Relations
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts        Alert[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([type, identifier])
+  @@index([type, isActive])
+  @@index([userId])
+}
+
+enum SourceType {
+  TWITTER
+  INSTAGRAM
+  TIKTOK
+  RSS
+  WEBSITE
+}
+
+// ==================== ALERTES ====================
+
+model Alert {
+  id           String      @id @default(cuid())
+  sourceId     String
+  source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  // Contenu original
+  externalId   String      // ID du post sur la plateforme
+  content      String      @db.Text
+  authorName   String
+  authorHandle String
+  authorAvatar String?
+  permalink    String      // Lien vers le post original
+
+  // Médias
+  media        Media[]
+
+  // Statut
+  status       AlertStatus @default(NEW)
+  isRead       Boolean     @default(false)
+  isPinned     Boolean     @default(false)
+
+  // Relations
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  savedContent SavedContent?
+  publications Publication[]
+
+  detectedAt   DateTime    @default(now())
+  postedAt     DateTime    // Date du post original
+
+  @@unique([sourceId, externalId])
+  @@index([status, detectedAt])
+  @@index([userId, isRead])
+  @@index([userId, status])
+}
+
+enum AlertStatus {
+  NEW
+  VIEWED
+  SAVED
+  PUBLISHED
+  DISMISSED
+}
+
+model Media {
+  id          String    @id @default(cuid())
+  alertId     String
+  alert       Alert     @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  type        MediaType
+  originalUrl String
+  storedUrl   String?   // URL après stockage local (R2)
+  thumbnail   String?
+
+  // Métadonnées
+  width       Int?
+  height      Int?
+  duration    Int?      // Pour les vidéos (en secondes)
+  size        Int?      // Taille en bytes
+
+  createdAt   DateTime  @default(now())
+
+  @@index([alertId])
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  GIF
+}
+
+// ==================== CONTENUS SAUVEGARDÉS ====================
+
+model SavedContent {
+  id        String   @id @default(cuid())
+  alertId   String   @unique
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  notes     String?  @db.Text
+  tags      String[] // Tags personnalisés
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ==================== PUBLICATIONS ====================
+
+model Publication {
+  id          String            @id @default(cuid())
+  alertId     String?
+  alert       Alert?            @relation(fields: [alertId], references: [id])
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+
+  platform    PublishPlatform
+  content     String            @db.Text
+  mediaUrls   String[]
+
+  // Résultat
+  status      PublishStatus     @default(PENDING)
+  externalId  String?           // ID du tweet publié
+  externalUrl String?           // URL du tweet
+  error       String?
+
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+}
+
+enum PublishPlatform {
+  TWITTER
+}
+
+enum PublishStatus {
+  PENDING
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+// ==================== VEILLE CONCURRENTIELLE ====================
+
+model Competitor {
+  id        String   @id @default(cuid())
+  name      String
+  handle    String   // @username sur X
+  url       String?  // Site web
+  userId    String   // Créé par
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ==================== CONFIGURATION ====================
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
