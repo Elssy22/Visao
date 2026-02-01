@@ -2,24 +2,28 @@
 
 ## 🔐 Authentication
 
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| POST | `/api/auth/register` | Créer un compte |
-| POST | `/api/auth/login` | Connexion |
-| POST | `/api/auth/logout` | Déconnexion |
-| GET | `/api/auth/me` | Profil utilisateur |
-| PUT | `/api/auth/me` | Modifier profil |
-| POST | `/api/auth/refresh` | Rafraîchir token |
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| POST | `/api/auth/register` | Créer un compte + organisation | Public |
+| POST | `/api/auth/login` | Connexion | Public |
+| POST | `/api/auth/logout` | Déconnexion | Authentifié |
+| GET | `/api/auth/me` | Profil utilisateur | Authentifié |
+| PUT | `/api/auth/me` | Modifier profil | Authentifié |
+| POST | `/api/auth/refresh` | Rafraîchir token | Public (avec refresh token) |
+| POST | `/api/auth/forgot-password` | Demande reset password | Public |
+| POST | `/api/auth/reset-password` | Reset password | Public (avec token) |
 
-### Exemple: Login
+### Exemple: Inscription (crée user + organisation)
 
 ```bash
-POST /api/auth/login
+POST /api/auth/register
 Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password": "password123"
+  "password": "SecurePass123!",
+  "name": "John Doe",
+  "organizationName": "Mon Équipe"
 }
 ```
 
@@ -30,10 +34,91 @@ Content-Type: application/json
     "id": "clx...",
     "email": "user@example.com",
     "name": "John Doe",
-    "role": "EDITOR"
+    "role": "OWNER"
+  },
+  "organization": {
+    "id": "clx...",
+    "name": "Mon Équipe",
+    "slug": "mon-equipe",
+    "plan": "FREE"
   },
   "accessToken": "eyJ...",
   "refreshToken": "eyJ..."
+}
+```
+
+### Exemple: Login
+
+```bash
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "SecurePass123!"
+}
+```
+
+---
+
+## 🏢 Organizations
+
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/organization` | Détails de mon organisation | Authentifié |
+| PUT | `/api/organization` | Modifier mon organisation | ADMIN+ |
+| GET | `/api/organization/usage` | Stats d'utilisation (users, sources) | ADMIN+ |
+
+### Exemple: Modifier l'organisation (white-label)
+
+```bash
+PUT /api/organization
+Content-Type: application/json
+Authorization: Bearer eyJ...
+
+{
+  "name": "Agence X Watch",
+  "logo": "https://..../logo.png",
+  "primaryColor": "#ff5500",
+  "customDomain": "veille.agencex.com"
+}
+```
+
+---
+
+## 👥 Users & Invitations
+
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/users` | Liste des users de l'org | ADMIN+ |
+| POST | `/api/users/invite` | Inviter un utilisateur | ADMIN+ |
+| DELETE | `/api/users/:id` | Supprimer un utilisateur | ADMIN+ |
+| PUT | `/api/users/:id/role` | Changer le rôle | ADMIN+ |
+| POST | `/api/invitations/accept` | Accepter une invitation | Public (avec token) |
+
+### Exemple: Inviter un utilisateur
+
+```bash
+POST /api/users/invite
+Content-Type: application/json
+Authorization: Bearer eyJ...
+
+{
+  "email": "collegue@example.com",
+  "role": "EDITOR"
+}
+```
+
+**Réponse:**
+```json
+{
+  "invitation": {
+    "id": "clx...",
+    "email": "collegue@example.com",
+    "role": "EDITOR",
+    "expiresAt": "2024-01-22T10:00:00Z"
+  },
+  "inviteUrl": "https://visao.app/invite/abc123..."
 }
 ```
 
@@ -41,15 +126,15 @@ Content-Type: application/json
 
 ## 📡 Sources
 
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| GET | `/api/sources` | Liste des sources |
-| POST | `/api/sources` | Ajouter une source |
-| GET | `/api/sources/:id` | Détails d'une source |
-| PUT | `/api/sources/:id` | Modifier une source |
-| DELETE | `/api/sources/:id` | Supprimer une source |
-| POST | `/api/sources/:id/check` | Forcer vérification |
-| GET | `/api/sources/:id/alerts` | Alertes d'une source |
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/sources` | Liste des sources | Authentifié |
+| POST | `/api/sources` | Ajouter une source | EDITOR+ |
+| GET | `/api/sources/:id` | Détails d'une source | Authentifié |
+| PUT | `/api/sources/:id` | Modifier une source | EDITOR+ |
+| DELETE | `/api/sources/:id` | Supprimer une source | ADMIN+ |
+| POST | `/api/sources/:id/check` | Forcer vérification | EDITOR+ |
+| GET | `/api/sources/:id/alerts` | Alertes d'une source | Authentifié |
 
 ### Exemple: Ajouter une source Twitter
 
@@ -83,21 +168,62 @@ Authorization: Bearer eyJ...
 
 ---
 
+## 💡 Source Suggestions (Propositions)
+
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/suggestions` | Liste des suggestions | ADMIN+ |
+| POST | `/api/suggestions` | Proposer une source | Authentifié |
+| PUT | `/api/suggestions/:id/approve` | Approuver | ADMIN+ |
+| PUT | `/api/suggestions/:id/reject` | Refuser | ADMIN+ |
+
+### Exemple: Proposer une source
+
+```bash
+POST /api/suggestions
+Content-Type: application/json
+Authorization: Bearer eyJ...
+
+{
+  "name": "Nice Kicks",
+  "type": "TWITTER",
+  "url": "@nicaborja_kicks",
+  "reason": "Très réactif sur les leaks Nike, souvent en avance de 24h"
+}
+```
+
+### Exemple: Approuver une suggestion
+
+```bash
+PUT /api/suggestions/clx.../approve
+Content-Type: application/json
+Authorization: Bearer eyJ...
+
+{
+  "note": "Bonne source, ajoutée avec intervalle de 60s"
+}
+```
+
+**Effet**: La source est automatiquement créée et la surveillance commence.
+
+---
+
 ## 🔔 Alerts
 
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| GET | `/api/alerts` | Liste des alertes (paginée) |
-| GET | `/api/alerts/:id` | Détails d'une alerte |
-| PUT | `/api/alerts/:id` | Modifier statut alerte |
-| POST | `/api/alerts/:id/save` | Sauvegarder contenu |
-| DELETE | `/api/alerts/:id/save` | Retirer de sauvegardés |
-| POST | `/api/alerts/:id/dismiss` | Ignorer alerte |
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/alerts` | Liste des alertes (paginée) | Authentifié |
+| GET | `/api/alerts/:id` | Détails d'une alerte | Authentifié |
+| PUT | `/api/alerts/:id` | Modifier statut/assignation | EDITOR+ |
+| POST | `/api/alerts/:id/save` | Sauvegarder contenu | EDITOR+ |
+| DELETE | `/api/alerts/:id/save` | Retirer de sauvegardés | EDITOR+ |
+| POST | `/api/alerts/:id/dismiss` | Ignorer alerte | EDITOR+ |
+| POST | `/api/alerts/:id/assign` | Assigner à un membre | EDITOR+ |
 
 ### Exemple: Liste des alertes
 
 ```bash
-GET /api/alerts?page=1&limit=20&status=NEW
+GET /api/alerts?page=1&limit=20&status=NEW&source=clx...
 Authorization: Bearer eyJ...
 ```
 
@@ -113,6 +239,7 @@ Authorization: Bearer eyJ...
       "permalink": "https://twitter.com/...",
       "status": "NEW",
       "isRead": false,
+      "assignedTo": null,
       "media": [
         {
           "id": "clx...",
@@ -140,16 +267,15 @@ Authorization: Bearer eyJ...
 }
 ```
 
-### Exemple: Sauvegarder une alerte
+### Exemple: Assigner une alerte
 
 ```bash
-POST /api/alerts/clx.../save
+POST /api/alerts/clx.../assign
 Content-Type: application/json
 Authorization: Bearer eyJ...
 
 {
-  "notes": "À traiter pour l'article de demain",
-  "tags": ["nike", "collab", "urgent"]
+  "userId": "clx..."
 }
 ```
 
@@ -157,30 +283,22 @@ Authorization: Bearer eyJ...
 
 ## 🖼️ Media
 
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| GET | `/api/media/:id` | Télécharger un média |
-| POST | `/api/media/download` | Forcer téléchargement |
-
-### Exemple: Télécharger un média
-
-```bash
-GET /api/media/clx...
-Authorization: Bearer eyJ...
-```
-
-Retourne le fichier média directement ou une URL signée.
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/media/:id` | Télécharger un média | Authentifié |
+| POST | `/api/media/:id/download` | Forcer téléchargement vers R2 | EDITOR+ |
 
 ---
 
 ## 📤 Publication
 
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| GET | `/api/publish/templates` | Templates de publication |
-| POST | `/api/publish/preview` | Prévisualiser publication |
-| POST | `/api/publish/twitter` | Publier sur Twitter |
-| GET | `/api/publish/history` | Historique publications |
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| GET | `/api/publish/templates` | Templates de publication | Authentifié |
+| POST | `/api/publish/preview` | Prévisualiser | EDITOR+ |
+| POST | `/api/publish/twitter` | Publier sur Twitter | EDITOR+ |
+| GET | `/api/publish/history` | Historique | Authentifié |
+| DELETE | `/api/publish/:id` | Annuler (si SCHEDULED) | EDITOR+ |
 
 ### Exemple: Publier sur Twitter
 
@@ -211,13 +329,13 @@ Authorization: Bearer eyJ...
 
 ## 🔔 Notifications
 
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| POST | `/api/notifications/subscribe` | S'abonner aux push |
-| DELETE | `/api/notifications/subscribe` | Se désabonner |
-| POST | `/api/notifications/test` | Envoyer test |
-| GET | `/api/notifications/settings` | Paramètres notifs |
-| PUT | `/api/notifications/settings` | Modifier paramètres |
+| Méthode | Endpoint | Description | Accès |
+|---------|----------|-------------|-------|
+| POST | `/api/notifications/subscribe` | S'abonner aux push | Authentifié |
+| DELETE | `/api/notifications/subscribe` | Se désabonner | Authentifié |
+| POST | `/api/notifications/test` | Envoyer test | Authentifié |
+| GET | `/api/notifications/settings` | Paramètres | Authentifié |
+| PUT | `/api/notifications/settings` | Modifier paramètres | Authentifié |
 
 ### Exemple: S'abonner aux notifications
 
@@ -244,42 +362,32 @@ Authorization: Bearer eyJ...
 ```javascript
 import { io } from 'socket.io-client';
 
-const socket = io('http://localhost:4000', {
+const socket = io('https://api.visao.app', {
   auth: {
     token: 'eyJ...'
   }
 });
+
+// Le serveur auto-join le user à sa room d'organisation
 ```
 
 ### Client → Server
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `subscribe:alerts` | `{}` | S'abonner aux alertes temps réel |
+| `subscribe:alerts` | `{}` | S'abonner aux alertes |
 | `unsubscribe:alerts` | `{}` | Se désabonner |
+| `alert:read` | `{ alertId }` | Marquer comme lu |
 
 ### Server → Client
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `alert:new` | `Alert` | Nouvelle alerte détectée |
-| `alert:updated` | `Alert` | Alerte mise à jour |
-| `source:status` | `{ sourceId, status }` | Changement statut source |
+| `alert:new` | `Alert` | Nouvelle alerte |
+| `alert:updated` | `Alert` | Alerte modifiée |
+| `source:status` | `{ sourceId, status, error? }` | Statut source |
 | `publish:result` | `Publication` | Résultat publication |
-
-### Exemple: Écouter les nouvelles alertes
-
-```javascript
-socket.on('alert:new', (alert) => {
-  console.log('Nouvelle alerte:', alert);
-  // Mettre à jour le feed
-});
-
-socket.on('alert:updated', (alert) => {
-  console.log('Alerte mise à jour:', alert);
-  // Rafraîchir l'alerte dans le feed
-});
-```
+| `suggestion:new` | `SourceSuggestion` | Nouvelle suggestion (admins) |
 
 ---
 
@@ -287,11 +395,13 @@ socket.on('alert:updated', (alert) => {
 
 | Code | Signification |
 |------|---------------|
-| 400 | Requête invalide (validation) |
+| 400 | Requête invalide |
 | 401 | Non authentifié |
-| 403 | Non autorisé (permissions) |
+| 403 | Non autorisé (permissions insuffisantes) |
 | 404 | Ressource non trouvée |
-| 429 | Rate limit atteint |
+| 409 | Conflit (ex: email déjà utilisé) |
+| 422 | Limite atteinte (plan) |
+| 429 | Rate limit |
 | 500 | Erreur serveur |
 
 ### Format des erreurs
@@ -299,14 +409,32 @@ socket.on('alert:updated', (alert) => {
 ```json
 {
   "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid request body",
-    "details": [
-      {
-        "field": "email",
-        "message": "Invalid email format"
-      }
-    ]
+    "code": "PLAN_LIMIT_REACHED",
+    "message": "You have reached the maximum number of sources for your plan",
+    "details": {
+      "current": 3,
+      "max": 3,
+      "plan": "FREE",
+      "upgradeUrl": "/settings/billing"
+    }
   }
 }
+```
+
+---
+
+## 🔒 Rate Limits
+
+| Endpoint | Limite |
+|----------|--------|
+| `/api/auth/*` | 10 req/min |
+| `/api/sources` (POST) | 20 req/min |
+| `/api/publish/*` | 30 req/min |
+| Autres | 100 req/min |
+
+Les headers de réponse incluent :
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1705312800
 ```

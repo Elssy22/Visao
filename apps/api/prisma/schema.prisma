@@ -1,5 +1,6 @@
 // Visao - Schema Prisma
 // Base de données PostgreSQL
+// Multi-tenant avec support White-label
 
 generator client {
   provider = "prisma-client-js"
@@ -8,6 +9,47 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ==================== ORGANISATIONS (Multi-tenant) ====================
+
+model Organization {
+  id            String   @id @default(cuid())
+  name          String   // "Visao", "Agence X", "Marque Y"
+  slug          String   @unique // "visao", "agence-x" (utilisé dans l'URL)
+
+  // White-label (Phase 2)
+  customDomain  String?  @unique // "veille.agencex.com"
+  logo          String?  // URL du logo
+  primaryColor  String?  @default("#3b82f6") // Couleur principale
+  secondaryColor String? @default("#1e293b") // Couleur secondaire
+
+  // Abonnement
+  plan          Plan     @default(FREE)
+  planExpiresAt DateTime?
+
+  // Limites selon le plan
+  maxUsers      Int      @default(1)
+  maxSources    Int      @default(3)
+
+  // Relations
+  users         User[]
+  sources       Source[]
+  invitations   Invitation[]
+  sourceSuggestions SourceSuggestion[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([slug])
+  @@index([customDomain])
+}
+
+enum Plan {
+  FREE        // 3 sources, 1 user, pas de notifs push
+  STARTER     // 10 sources, 3 users - 29€/mois
+  PRO         // 50 sources, 10 users - 79€/mois
+  ENTERPRISE  // Illimité - sur devis
 }
 
 // ==================== UTILISATEURS ====================
@@ -19,22 +61,64 @@ model User {
   name          String
   role          UserRole  @default(EDITOR)
   avatar        String?
+  isActive      Boolean   @default(true)
+
+  // Appartenance à une organisation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Relations
-  sources           Source[]
   alerts            Alert[]
   savedContents     SavedContent[]
   publications      Publication[]
   pushSubscriptions PushSubscription[]
+  sourceSuggestions SourceSuggestion[]
+
+  // Tokens
+  refreshTokens     RefreshToken[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  @@index([organizationId])
+  @@index([email])
 }
 
 enum UserRole {
-  ADMIN
-  EDITOR
-  VIEWER
+  OWNER   // Propriétaire de l'organisation (peut tout faire + supprimer l'org)
+  ADMIN   // Peut tout faire sauf supprimer l'org
+  EDITOR  // Peut ajouter sources, publier, sauvegarder
+  VIEWER  // Peut uniquement consulter le feed
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  role           UserRole @default(EDITOR)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  token          String   @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+
+  createdAt      DateTime @default(now())
+
+  @@index([token])
+  @@index([organizationId])
 }
 
 model PushSubscription {
@@ -46,6 +130,8 @@ model PushSubscription {
   userAgent String?
 
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // ==================== SOURCES ====================
@@ -59,21 +145,24 @@ model Source {
   isActive      Boolean     @default(true)
   checkInterval Int         @default(60) // Intervalle en secondes
   lastCheckedAt DateTime?
+  lastError     String?     // Dernière erreur de fetch
 
   // Métadonnées de la source
   metadata      Json?       // Avatar, bio, followers, etc.
 
+  // Appartenance à une organisation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
   // Relations
-  userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   alerts        Alert[]
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  @@unique([type, identifier])
+  @@unique([organizationId, type, identifier])
   @@index([type, isActive])
-  @@index([userId])
+  @@index([organizationId])
 }
 
 enum SourceType {
@@ -82,6 +171,43 @@ enum SourceType {
   TIKTOK
   RSS
   WEBSITE
+}
+
+// ==================== SOUMISSION DE SOURCES ====================
+
+model SourceSuggestion {
+  id             String   @id @default(cuid())
+
+  // Qui propose
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Organisation concernée
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // La source proposée
+  name           String
+  type           SourceType
+  url            String
+  reason         String?  @db.Text // "Très réactif sur les leaks Nike"
+
+  // Statut
+  status         SuggestionStatus @default(PENDING)
+  reviewedById   String?  // Admin qui a review
+  reviewNote     String?  // "Doublon" ou "Pas pertinent"
+
+  createdAt      DateTime @default(now())
+  reviewedAt     DateTime?
+
+  @@index([organizationId, status])
+  @@index([userId])
+}
+
+enum SuggestionStatus {
+  PENDING   // En attente de review
+  APPROVED  // Accepté et ajouté
+  REJECTED  // Refusé
 }
 
 // ==================== ALERTES ====================
@@ -107,9 +233,11 @@ model Alert {
   isRead       Boolean     @default(false)
   isPinned     Boolean     @default(false)
 
+  // Assignation (optionnel - pour le travail d'équipe)
+  assignedToId String?
+  assignedTo   User?       @relation(fields: [assignedToId], references: [id])
+
   // Relations
-  userId       String
-  user         User        @relation(fields: [userId], references: [id])
   savedContent SavedContent?
   publications Publication[]
 
@@ -118,16 +246,16 @@ model Alert {
 
   @@unique([sourceId, externalId])
   @@index([status, detectedAt])
-  @@index([userId, isRead])
-  @@index([userId, status])
+  @@index([sourceId])
+  @@index([assignedToId])
 }
 
 enum AlertStatus {
-  NEW
-  VIEWED
-  SAVED
-  PUBLISHED
-  DISMISSED
+  NEW        // Vient d'arriver
+  VIEWED     // Vu mais pas traité
+  SAVED      // Sauvegardé pour plus tard
+  PUBLISHED  // Publié sur X
+  DISMISSED  // Ignoré
 }
 
 model Media {
@@ -206,31 +334,51 @@ enum PublishPlatform {
 }
 
 enum PublishStatus {
-  PENDING
-  SCHEDULED
-  PUBLISHED
-  FAILED
+  PENDING    // En attente
+  SCHEDULED  // Programmé
+  PUBLISHED  // Publié avec succès
+  FAILED     // Échec
 }
 
 // ==================== VEILLE CONCURRENTIELLE ====================
 
 model Competitor {
-  id        String   @id @default(cuid())
-  name      String
-  handle    String   // @username sur X
-  url       String?  // Site web
-  userId    String   // Créé par
+  id             String   @id @default(cuid())
+  name           String
+  handle         String   // @username sur X
+  url            String?  // Site web
+  organizationId String   // Appartient à une organisation
 
-  createdAt DateTime @default(now())
+  createdAt      DateTime @default(now())
 
-  @@index([userId])
+  @@index([organizationId])
 }
 
-// ==================== CONFIGURATION ====================
+// ==================== CONFIGURATION SYSTÈME ====================
 
 model SystemConfig {
   id        String   @id @default(cuid())
   key       String   @unique
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+// ==================== AUDIT LOG (optionnel mais recommandé) ====================
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  userId         String?
+  organizationId String?
+  action         String   // "source.created", "alert.published", etc.
+  entityType     String?  // "Source", "Alert", "User"
+  entityId       String?
+  metadata       Json?    // Détails supplémentaires
+  ipAddress      String?
+  userAgent      String?
+
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action])
 }

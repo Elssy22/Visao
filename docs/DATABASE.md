@@ -1,308 +1,316 @@
 # Visao - Modèle de données
 
-## 🗃️ Schema Prisma complet
+## 📊 Vue d'ensemble
 
-```prisma
-// prisma/schema.prisma
+Visao utilise une architecture **multi-tenant** où chaque organisation a ses propres données isolées.
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-// ==================== UTILISATEURS ====================
-
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  name          String
-  role          UserRole  @default(EDITOR)
-  avatar        String?
-
-  // Relations
-  sources           Source[]
-  alerts            Alert[]
-  savedContents     SavedContent[]
-  publications      Publication[]
-  pushSubscriptions PushSubscription[]
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-enum UserRole {
-  ADMIN     // Peut tout faire + gérer les utilisateurs
-  EDITOR    // Peut ajouter sources, publier, sauvegarder
-  VIEWER    // Peut uniquement consulter le feed
-}
-
-model PushSubscription {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint  String   @unique
-  keys      Json     // { p256dh, auth }
-  userAgent String?
-
-  createdAt DateTime @default(now())
-}
-
-// ==================== SOURCES ====================
-
-model Source {
-  id            String      @id @default(cuid())
-  name          String
-  type          SourceType
-  url           String      // URL ou identifiant (@username, etc.)
-  identifier    String?     // ID spécifique à la plateforme
-  isActive      Boolean     @default(true)
-  checkInterval Int         @default(60) // Intervalle en secondes
-  lastCheckedAt DateTime?
-
-  // Métadonnées de la source
-  metadata      Json?       // Avatar, bio, followers, etc.
-
-  // Relations
-  userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  alerts        Alert[]
-
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  @@unique([type, identifier])
-  @@index([type, isActive])
-}
-
-enum SourceType {
-  TWITTER
-  INSTAGRAM
-  TIKTOK
-  RSS
-  WEBSITE
-}
-
-// ==================== ALERTES ====================
-
-model Alert {
-  id           String      @id @default(cuid())
-  sourceId     String
-  source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-
-  // Contenu original
-  externalId   String      // ID du post sur la plateforme
-  content      String      @db.Text
-  authorName   String
-  authorHandle String
-  authorAvatar String?
-  permalink    String      // Lien vers le post original
-
-  // Médias
-  media        Media[]
-
-  // Statut
-  status       AlertStatus @default(NEW)
-  isRead       Boolean     @default(false)
-  isPinned     Boolean     @default(false)
-
-  // Relations
-  userId       String
-  user         User        @relation(fields: [userId], references: [id])
-  savedContent SavedContent?
-  publications Publication[]
-
-  detectedAt   DateTime    @default(now())
-  postedAt     DateTime    // Date du post original
-
-  @@unique([sourceId, externalId])
-  @@index([status, detectedAt])
-  @@index([userId, isRead])
-}
-
-enum AlertStatus {
-  NEW        // Vient d'arriver
-  VIEWED     // Vu mais pas traité
-  SAVED      // Sauvegardé pour plus tard
-  PUBLISHED  // Publié sur X
-  DISMISSED  // Ignoré
-}
-
-model Media {
-  id          String    @id @default(cuid())
-  alertId     String
-  alert       Alert     @relation(fields: [alertId], references: [id], onDelete: Cascade)
-
-  type        MediaType
-  originalUrl String
-  storedUrl   String?   // URL après stockage local (R2)
-  thumbnail   String?
-
-  // Métadonnées
-  width       Int?
-  height      Int?
-  duration    Int?      // Pour les vidéos (en secondes)
-  size        Int?      // Taille en bytes
-
-  createdAt   DateTime  @default(now())
-}
-
-enum MediaType {
-  IMAGE
-  VIDEO
-  GIF
-}
-
-// ==================== CONTENUS SAUVEGARDÉS ====================
-
-model SavedContent {
-  id        String   @id @default(cuid())
-  alertId   String   @unique
-  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-
-  notes     String?  @db.Text
-  tags      String[] // Tags personnalisés
-
-  createdAt DateTime @default(now())
-
-  @@index([userId, createdAt])
-}
-
-// ==================== PUBLICATIONS ====================
-
-model Publication {
-  id          String            @id @default(cuid())
-  alertId     String?
-  alert       Alert?            @relation(fields: [alertId], references: [id])
-  userId      String
-  user        User              @relation(fields: [userId], references: [id])
-
-  platform    PublishPlatform
-  content     String            @db.Text
-  mediaUrls   String[]
-
-  // Résultat
-  status      PublishStatus     @default(PENDING)
-  externalId  String?           // ID du tweet publié
-  externalUrl String?           // URL du tweet
-  error       String?
-
-  scheduledAt DateTime?
-  publishedAt DateTime?
-  createdAt   DateTime          @default(now())
-
-  @@index([userId, status])
-}
-
-enum PublishPlatform {
-  TWITTER
-}
-
-enum PublishStatus {
-  PENDING    // En attente
-  SCHEDULED  // Programmé
-  PUBLISHED  // Publié avec succès
-  FAILED     // Échec
-}
-
-// ==================== VEILLE CONCURRENTIELLE ====================
-
-model Competitor {
-  id        String   @id @default(cuid())
-  name      String
-  handle    String   // @username sur X
-  url       String?  // Site web
-  userId    String   // Créé par
-
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-}
-
-// ==================== CONFIGURATION ====================
-
-model SystemConfig {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Json
-  updatedAt DateTime @updatedAt
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        MULTI-TENANT                             │
+│                                                                 │
+│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐          │
+│   │   Org A     │   │   Org B     │   │   Org C     │          │
+│   │   "Visao"   │   │  "AgenceX"  │   │  "MarqueY"  │          │
+│   │             │   │             │   │             │          │
+│   │ └─ Users    │   │ └─ Users    │   │ └─ Users    │          │
+│   │ └─ Sources  │   │ └─ Sources  │   │ └─ Sources  │          │
+│   │ └─ Alerts   │   │ └─ Alerts   │   │ └─ Alerts   │          │
+│   └─────────────┘   └─────────────┘   └─────────────┘          │
+│          │                 │                 │                  │
+│          └─────────────────┼─────────────────┘                  │
+│                            │                                    │
+│                   ┌────────▼────────┐                           │
+│                   │   PostgreSQL    │                           │
+│                   │   (une seule    │                           │
+│                   │   base de       │                           │
+│                   │   données)      │                           │
+│                   └─────────────────┘                           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📊 Diagramme des relations
+## 🗃️ Diagramme des relations
 
 ```
-┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│    User     │──────<│   Source    │──────<│    Alert    │
-│             │       │             │       │             │
-│ • email     │       │ • name      │       │ • content   │
-│ • password  │       │ • type      │       │ • status    │
-│ • name      │       │ • url       │       │ • permalink │
-│ • role      │       │ • isActive  │       │ • postedAt  │
-└─────────────┘       └─────────────┘       └──────┬──────┘
-      │                                            │
-      │                                            │
-      ▼                                            ▼
-┌─────────────┐                            ┌─────────────┐
-│ PushSubscr. │                            │    Media    │
-│             │                            │             │
-│ • endpoint  │                            │ • type      │
-│ • keys      │                            │ • url       │
-└─────────────┘                            │ • thumbnail │
-      │                                    └─────────────┘
-      │
-      ▼
-┌─────────────┐       ┌─────────────┐
-│SavedContent │       │ Publication │
-│             │       │             │
-│ • notes     │       │ • content   │
-│ • tags      │       │ • status    │
-└─────────────┘       │ • platform  │
-                      └─────────────┘
+┌─────────────────┐
+│  Organization   │
+│                 │
+│ • name          │
+│ • slug          │
+│ • plan          │
+│ • customDomain  │
+│ • logo          │
+│ • colors        │
+└────────┬────────┘
+         │
+         │ 1:N
+         ▼
+┌─────────────────┐       ┌─────────────────┐
+│      User       │──────>│   Invitation    │
+│                 │       │                 │
+│ • email         │       │ • email         │
+│ • password      │       │ • token         │
+│ • role          │       │ • expiresAt     │
+│ • isActive      │       └─────────────────┘
+└────────┬────────┘
+         │
+    ┌────┴────┬─────────────┬──────────────┐
+    │         │             │              │
+    ▼         ▼             ▼              ▼
+┌───────┐ ┌───────┐ ┌────────────┐ ┌───────────────┐
+│ Alert │ │ Saved │ │Publication │ │PushSubscription│
+│       │ │Content│ │            │ │               │
+└───┬───┘ └───────┘ └────────────┘ └───────────────┘
+    │
+    ▼
+┌─────────────────┐
+│     Media       │
+│                 │
+│ • type          │
+│ • originalUrl   │
+│ • storedUrl     │
+└─────────────────┘
+
+
+┌─────────────────┐       ┌─────────────────┐
+│     Source      │──────>│ SourceSuggestion│
+│                 │       │                 │
+│ • name          │       │ • name          │
+│ • type          │       │ • url           │
+│ • url           │       │ • reason        │
+│ • isActive      │       │ • status        │
+└────────┬────────┘       └─────────────────┘
+         │
+         │ 1:N
+         ▼
+┌─────────────────┐
+│     Alert       │
+└─────────────────┘
 ```
 
 ---
 
-## 🔧 Indexes recommandés
+## 📋 Tables détaillées
 
-Les indexes sont définis dans le schema pour optimiser les requêtes fréquentes :
+### Organization (Organisation / Entreprise)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| name | String | Nom affiché ("Visao", "Agence X") |
+| slug | String | URL-friendly ("visao", "agence-x") |
+| customDomain | String? | Domaine personnalisé ("veille.agencex.com") |
+| logo | String? | URL du logo |
+| primaryColor | String? | Couleur principale (#3b82f6) |
+| secondaryColor | String? | Couleur secondaire |
+| plan | Plan | FREE, STARTER, PRO, ENTERPRISE |
+| maxUsers | Int | Limite d'utilisateurs |
+| maxSources | Int | Limite de sources |
+
+### Plans et limites
+
+| Plan | Prix | Users max | Sources max | Notifications |
+|------|------|-----------|-------------|---------------|
+| FREE | 0€ | 1 | 3 | ❌ |
+| STARTER | 29€/mois | 3 | 10 | ✅ |
+| PRO | 79€/mois | 10 | 50 | ✅ |
+| ENTERPRISE | Sur devis | Illimité | Illimité | ✅ |
+
+---
+
+### User (Utilisateur)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| email | String | Email (unique) |
+| password | String | Hash du mot de passe |
+| name | String | Nom affiché |
+| role | UserRole | OWNER, ADMIN, EDITOR, VIEWER |
+| organizationId | String | Organisation d'appartenance |
+| isActive | Boolean | Compte actif/désactivé |
+| lastLoginAt | DateTime? | Dernière connexion |
+
+### Rôles et permissions
+
+| Permission | OWNER | ADMIN | EDITOR | VIEWER |
+|------------|-------|-------|--------|--------|
+| Voir le feed | ✅ | ✅ | ✅ | ✅ |
+| Sauvegarder des alertes | ✅ | ✅ | ✅ | ❌ |
+| Publier sur X | ✅ | ✅ | ✅ | ❌ |
+| Ajouter des sources | ✅ | ✅ | ✅ | ❌ |
+| Proposer des sources | ✅ | ✅ | ✅ | ✅ |
+| Approuver des sources | ✅ | ✅ | ❌ | ❌ |
+| Gérer les utilisateurs | ✅ | ✅ | ❌ | ❌ |
+| Modifier l'organisation | ✅ | ✅ | ❌ | ❌ |
+| Supprimer l'organisation | ✅ | ❌ | ❌ | ❌ |
+
+---
+
+### Source (Source à surveiller)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| name | String | Nom affiché ("Sneaker News") |
+| type | SourceType | TWITTER, INSTAGRAM, TIKTOK, RSS, WEBSITE |
+| url | String | URL ou @username |
+| identifier | String? | ID sur la plateforme |
+| isActive | Boolean | Surveillance active |
+| checkInterval | Int | Intervalle en secondes (défaut: 60) |
+| organizationId | String | Organisation propriétaire |
+| metadata | Json? | Avatar, bio, stats... |
+
+---
+
+### SourceSuggestion (Proposition de source)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| userId | String | Qui propose |
+| organizationId | String | Pour quelle organisation |
+| name | String | Nom proposé |
+| type | SourceType | Type de source |
+| url | String | URL proposée |
+| reason | String? | Pourquoi cette source ? |
+| status | SuggestionStatus | PENDING, APPROVED, REJECTED |
+| reviewedById | String? | Qui a validé/refusé |
+| reviewNote | String? | Note de review |
+
+```
+FLUX DE SOUMISSION
+──────────────────
+
+User propose          Admin review          Résultat
+     │                     │                    │
+     ▼                     ▼                    ▼
+┌─────────┐          ┌─────────┐          ┌─────────┐
+│ PENDING │  ──────► │ REVIEW  │  ──────► │APPROVED │ → Source créée
+└─────────┘          └─────────┘          └─────────┘
+                           │
+                           │
+                           ▼
+                     ┌─────────┐
+                     │REJECTED │ → Notification au user
+                     └─────────┘
+```
+
+---
+
+### Alert (Alerte / Contenu détecté)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| sourceId | String | Source d'origine |
+| externalId | String | ID sur la plateforme (évite doublons) |
+| content | String | Texte du post |
+| authorName | String | Nom de l'auteur |
+| authorHandle | String | @handle |
+| permalink | String | Lien vers l'original |
+| status | AlertStatus | NEW, VIEWED, SAVED, PUBLISHED, DISMISSED |
+| isRead | Boolean | Lu ou non |
+| isPinned | Boolean | Épinglé en haut |
+| assignedToId | String? | Assigné à un membre |
+| postedAt | DateTime | Date du post original |
+| detectedAt | DateTime | Date de détection |
+
+---
+
+### Media (Média attaché)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| alertId | String | Alerte parente |
+| type | MediaType | IMAGE, VIDEO, GIF |
+| originalUrl | String | URL source |
+| storedUrl | String? | URL sur R2 (après téléchargement) |
+| thumbnail | String? | Miniature |
+| width | Int? | Largeur |
+| height | Int? | Hauteur |
+| duration | Int? | Durée vidéo (secondes) |
+| size | Int? | Taille (bytes) |
+
+---
+
+### Publication (Publication sur X)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| alertId | String? | Alerte source (optionnel) |
+| userId | String | Qui publie |
+| platform | PublishPlatform | TWITTER |
+| content | String | Texte du tweet |
+| mediaUrls | String[] | Médias à joindre |
+| status | PublishStatus | PENDING, SCHEDULED, PUBLISHED, FAILED |
+| externalId | String? | ID du tweet créé |
+| externalUrl | String? | URL du tweet |
+| error | String? | Message d'erreur |
+| scheduledAt | DateTime? | Publication programmée |
+| publishedAt | DateTime? | Date effective |
+
+---
+
+### AuditLog (Journal d'audit)
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| id | String | Identifiant unique |
+| userId | String? | Qui a fait l'action |
+| organizationId | String? | Dans quelle org |
+| action | String | "source.created", "alert.published"... |
+| entityType | String? | "Source", "Alert", "User" |
+| entityId | String? | ID de l'entité |
+| metadata | Json? | Détails supplémentaires |
+| ipAddress | String? | IP du client |
+| createdAt | DateTime | Quand |
+
+**Actions trackées** :
+- `user.login`, `user.logout`
+- `source.created`, `source.updated`, `source.deleted`
+- `alert.saved`, `alert.published`, `alert.dismissed`
+- `suggestion.created`, `suggestion.approved`, `suggestion.rejected`
+- `organization.updated`, `user.invited`, `user.removed`
+
+---
+
+## 🔧 Indexes
 
 | Table | Index | Utilisation |
 |-------|-------|-------------|
-| Source | `[type, isActive]` | Filtrer sources actives par type |
-| Alert | `[status, detectedAt]` | Feed chronologique par statut |
-| Alert | `[userId, isRead]` | Alertes non lues d'un user |
-| Alert | `[sourceId, externalId]` | Éviter les doublons |
-| SavedContent | `[userId, createdAt]` | Liste sauvegardés d'un user |
-| Publication | `[userId, status]` | Historique publications |
+| Organization | `[slug]` | Lookup par slug |
+| Organization | `[customDomain]` | Lookup par domaine |
+| User | `[organizationId]` | Users d'une org |
+| User | `[email]` | Login |
+| Source | `[organizationId]` | Sources d'une org |
+| Source | `[type, isActive]` | Sources actives par type |
+| Alert | `[sourceId]` | Alertes d'une source |
+| Alert | `[status, detectedAt]` | Feed chronologique |
+| SourceSuggestion | `[organizationId, status]` | Suggestions en attente |
+| AuditLog | `[organizationId, createdAt]` | Historique par org |
 
 ---
 
-## 💾 Migrations
-
-### Créer une migration
+## 💾 Commandes Prisma
 
 ```bash
-cd apps/api
-pnpm prisma migrate dev --name nom_de_la_migration
-```
+# Générer le client
+pnpm --filter api prisma generate
 
-### Appliquer en production
+# Créer une migration
+pnpm --filter api prisma migrate dev --name nom_migration
 
-```bash
-pnpm prisma migrate deploy
-```
+# Appliquer les migrations (prod)
+pnpm --filter api prisma migrate deploy
 
-### Générer le client
+# Ouvrir Prisma Studio (GUI)
+pnpm --filter api prisma studio
 
-```bash
-pnpm prisma generate
+# Reset la BDD (dev seulement !)
+pnpm --filter api prisma migrate reset
 ```
