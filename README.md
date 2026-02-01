@@ -29,11 +29,11 @@
 ```
 visao/
 ├── apps/
-│   ├── web/          # PWA Next.js 14
-│   └── api/          # Backend Express.js
+│   ├── web/          # PWA Next.js 14 (Vercel)
+│   └── workers/      # Background jobs (Railway)
 ├── packages/
 │   └── shared/       # Types et utilitaires partagés
-└── docker-compose.yml
+└── supabase/         # Migrations SQL
 ```
 
 ## 🛠️ Stack technique
@@ -43,32 +43,43 @@ visao/
 | Frontend | Next.js 14 (App Router) + TailwindCSS + shadcn/ui |
 | PWA | @ducanh2912/next-pwa |
 | State | Zustand + TanStack Query |
-| Real-time | Socket.io |
-| Backend | Express.js + BullMQ |
-| Database | PostgreSQL + Prisma |
-| Cache/Queue | Redis |
-| Storage | Cloudflare R2 |
-| Auth | JWT (Access + Refresh tokens) |
+| Real-time | Supabase Realtime |
+| Database | Supabase (PostgreSQL) + Prisma |
+| Auth | Supabase Auth (OAuth, Magic Link, 2FA) |
+| Storage | Supabase Storage |
+| Queue | BullMQ + Upstash Redis |
+| Workers | Railway |
 
-## 💰 Coûts estimés
+## 💰 Coûts
 
-| Service | Coût/mois |
-|---------|-----------|
-| VPS (Railway/Render) | ~15-25$ |
-| PostgreSQL | ~0-15$ |
-| Redis | ~0-10$ |
-| Cloudflare R2 | ~5-20$ |
-| Twitter API Basic | 100$ |
-| **Total** | **~120-170$/mois** |
+### Développement (GRATUIT)
 
-## 📊 Plans tarifaires (pour vos clients)
+| Service | Plan | Coût |
+|---------|------|------|
+| Supabase | Free | 0$ |
+| Upstash Redis | Free | 0$ |
+| Railway | Free (5$ crédit) | 0$ |
+| Vercel | Hobby | 0$ |
+| **Total** | | **0$/mois** |
 
-| Plan | Prix | Users | Sources | Notifications |
-|------|------|-------|---------|---------------|
-| Free | 0€ | 1 | 3 | ❌ |
-| Starter | 29€/mois | 3 | 10 | ✅ |
-| Pro | 79€/mois | 10 | 50 | ✅ |
-| Enterprise | Sur devis | ∞ | ∞ | ✅ |
+### Production
+
+| Service | Plan | Coût |
+|---------|------|------|
+| Supabase | Pro | 25$ |
+| Upstash Redis | Pro | 10$ |
+| Railway | Pro | 10$ |
+| Vercel | Pro | 20$ |
+| Twitter API | Basic | 100$ |
+| **Total** | | **~165$/mois** |
+
+## 📊 Capacité avec Twitter API Basic (100$/mois)
+
+| Ressource | Limite | Ce que ça permet |
+|-----------|--------|------------------|
+| Lecture | 10K tweets/mois | ~50-60 comptes Twitter |
+| Écriture | 1.5K tweets/mois | ~50 publications/jour |
+| RSS | Illimité | Autant que tu veux |
 
 ## 🚀 Démarrage rapide
 
@@ -76,7 +87,8 @@ visao/
 
 - Node.js 20+
 - pnpm 8+
-- Docker & Docker Compose
+- Compte [Supabase](https://supabase.com) (gratuit)
+- Compte [Upstash](https://upstash.com) (gratuit)
 
 ### Installation
 
@@ -90,12 +102,10 @@ pnpm install
 
 # Copier les variables d'environnement
 cp .env.example .env
-
-# Démarrer les services (PostgreSQL, Redis)
-docker-compose up -d
+# → Remplir avec tes clés Supabase et Upstash
 
 # Appliquer les migrations
-pnpm db:migrate
+pnpm db:push
 
 # Lancer en développement
 pnpm dev
@@ -104,14 +114,12 @@ pnpm dev
 ### Scripts disponibles
 
 ```bash
-pnpm dev          # Lance frontend + backend
-pnpm dev:web      # Lance seulement le frontend
-pnpm dev:api      # Lance seulement le backend
+pnpm dev          # Lance le frontend
+pnpm dev:workers  # Lance les workers
 pnpm build        # Build production
-pnpm db:migrate   # Applique les migrations
+pnpm db:push      # Push le schema vers Supabase
 pnpm db:studio    # Ouvre Prisma Studio
-pnpm docker:up    # Démarre PostgreSQL + Redis
-pnpm docker:down  # Arrête les containers
+pnpm db:generate  # Génère le client Prisma
 ```
 
 ## 📁 Documentation
@@ -123,11 +131,11 @@ pnpm docker:down  # Arrête les containers
 
 ## 🔐 Sécurité
 
-- Authentification JWT avec refresh tokens
-- Mots de passe hashés (bcrypt)
-- Rate limiting sur toutes les routes
+- Authentification Supabase (OAuth, Magic Link, 2FA)
+- Row Level Security (RLS) PostgreSQL
+- Isolation des données par organisation
+- Rate limiting
 - Validation des données (Zod)
-- CORS configuré
 - Audit log des actions sensibles
 
 ## 📋 Roadmap
@@ -136,17 +144,17 @@ pnpm docker:down  # Arrête les containers
 - [x] Architecture multi-tenant
 - [x] Modèle de données complet
 - [x] Documentation API
+- [x] Stack Supabase + Upstash + Railway
 - [ ] Setup monorepo pnpm
-- [ ] Configuration PostgreSQL + Prisma
-- [ ] Configuration Redis
-- [ ] Authentification JWT
+- [ ] Configuration Supabase
+- [ ] Configuration Upstash Redis
 
 ### Phase 2 - Core Features
 - [ ] CRUD Sources
 - [ ] Système de soumission/approbation
 - [ ] Worker Twitter
 - [ ] Worker RSS
-- [ ] Stockage médias (R2)
+- [ ] Stockage médias (Supabase Storage)
 - [ ] Dashboard + feed temps réel
 - [ ] Notifications push
 

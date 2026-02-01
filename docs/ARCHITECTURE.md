@@ -23,25 +23,28 @@ FRONTEND (PWA)
 ├── UI: Tailwind CSS + shadcn/ui
 ├── State: Zustand
 ├── Data fetching: TanStack Query (React Query)
-├── Real-time: Socket.io-client
+├── Real-time: Supabase Realtime
+├── Auth: Supabase Auth
 └── Notifications: Web Push API
 
-BACKEND
+BACKEND (Workers)
 ├── Runtime: Node.js 20+
-├── Framework: Express.js
-├── Real-time: Socket.io
-├── Job Queue: BullMQ
-├── ORM: Prisma
+├── Framework: Express.js (API routes customs)
+├── Job Queue: BullMQ + Upstash Redis
+├── ORM: Prisma (avec Supabase PostgreSQL)
 └── Validation: Zod
 
-BASE DE DONNÉES
-├── Principal: PostgreSQL
-├── Cache/Queue: Redis
-└── Stockage médias: Cloudflare R2
+SERVICES MANAGÉS
+├── Database: Supabase (PostgreSQL)
+├── Auth: Supabase Auth
+├── Storage: Supabase Storage
+├── Real-time: Supabase Realtime
+├── Cache/Queue: Upstash Redis
+└── Workers: Railway
 
 SERVICES EXTERNES
 ├── Twitter/X API v2
-├── Web Scraping: Puppeteer + Browserless
+├── Web Scraping: Puppeteer (si besoin)
 └── Push Notifications: web-push
 ```
 
@@ -61,31 +64,57 @@ SERVICES EXTERNES
                              │
                     ┌────────▼────────┐
                     │   NEXT.JS PWA   │
-                    │   (Frontend)    │
-                    │   Port: 3000    │
-                    └────────┬────────┘
-                             │
-                    ┌────────▼────────┐
-                    │   API BACKEND   │
-                    │   (Express)     │
-                    │   Port: 4000    │
+                    │    (Vercel)     │
+                    │                 │
+                    │ • Pages/Routes  │
+                    │ • API Routes    │
+                    │ • Supabase SDK  │
                     └────────┬────────┘
                              │
         ┌────────────────────┼────────────────────┐
         │                    │                    │
-┌───────▼───────┐   ┌───────▼───────┐   ┌───────▼───────┐
-│   WORKERS     │   │   DATABASE    │   │   STORAGE     │
-│   (BullMQ)    │   │  PostgreSQL   │   │  Cloudflare   │
-│               │   │    Redis      │   │      R2       │
-│ • Twitter     │   │               │   │               │
-│ • Scraper     │   │               │   │  • Images     │
-│ • RSS         │   │               │   │  • Videos     │
+        ▼                    ▼                    ▼
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│   SUPABASE    │   │    UPSTASH    │   │   RAILWAY     │
+│               │   │     REDIS     │   │   WORKERS     │
+│ • PostgreSQL  │   │               │   │               │
+│ • Auth        │   │ • Job Queue   │   │ • Twitter     │
+│ • Storage     │   │ • Cache       │   │ • RSS         │
+│ • Realtime    │   │               │   │ • Scraper     │
+│               │   │               │   │               │
+│   (gratuit    │   │   (gratuit    │   │   (gratuit    │
+│    ou 25$)    │   │    ou 10$)    │   │    ou 10$)    │
 └───────────────┘   └───────────────┘   └───────────────┘
 ```
 
 ---
 
-## 📁 Structure du projet
+## 💰 Coûts par environnement
+
+### Développement (GRATUIT)
+
+| Service | Plan | Coût | Limites |
+|---------|------|------|---------|
+| Supabase | Free | 0$ | 500 MB DB, pause 7j |
+| Upstash Redis | Free | 0$ | 10K cmd/jour |
+| Railway | Free | 0$ | 5$ crédit/mois |
+| Vercel | Hobby | 0$ | Usage personnel |
+| **TOTAL DEV** | | **0$** | |
+
+### Production
+
+| Service | Plan | Coût | Ce que tu obtiens |
+|---------|------|------|-------------------|
+| Supabase | Pro | 25$ | 8 GB DB, pas de pause |
+| Upstash Redis | Pro | 10$ | Illimité |
+| Railway | Pro | 10$ | Workers 24/7 |
+| Vercel | Pro | 20$ | Usage commercial |
+| Twitter API | Basic | 100$ | 10K tweets/mois |
+| **TOTAL PROD** | | **~165$/mois** | |
+
+---
+
+## 📁 Structure du projet (simplifiée avec Supabase)
 
 ```
 visao/
@@ -94,115 +123,238 @@ visao/
 │   │   ├── app/
 │   │   │   ├── (auth)/
 │   │   │   │   ├── login/
-│   │   │   │   └── register/
+│   │   │   │   ├── register/
+│   │   │   │   └── callback/     # OAuth callback Supabase
 │   │   │   ├── (dashboard)/
-│   │   │   │   ├── page.tsx           # Dashboard principal
+│   │   │   │   ├── page.tsx
 │   │   │   │   ├── sources/
-│   │   │   │   │   └── page.tsx       # Gestion des sources
 │   │   │   │   ├── alerts/
-│   │   │   │   │   └── page.tsx       # Historique alertes
 │   │   │   │   ├── saved/
-│   │   │   │   │   └── page.tsx       # Contenus sauvegardés
 │   │   │   │   └── settings/
-│   │   │   │       └── page.tsx       # Paramètres
 │   │   │   ├── api/
-│   │   │   │   └── [...proxy]/        # Proxy vers backend
+│   │   │   │   ├── webhooks/     # Webhooks Supabase
+│   │   │   │   └── cron/         # Cron jobs (Vercel)
 │   │   │   ├── layout.tsx
-│   │   │   ├── manifest.ts            # PWA Manifest
-│   │   │   └── sw.ts                  # Service Worker
+│   │   │   └── manifest.ts
 │   │   ├── components/
-│   │   │   ├── ui/                    # shadcn/ui components
-│   │   │   ├── dashboard/
-│   │   │   │   ├── feed-card.tsx
-│   │   │   │   ├── alert-item.tsx
-│   │   │   │   └── quick-publish.tsx
-│   │   │   ├── sources/
-│   │   │   │   ├── source-form.tsx
-│   │   │   │   └── source-list.tsx
-│   │   │   └── layout/
-│   │   │       ├── header.tsx
-│   │   │       ├── sidebar.tsx
-│   │   │       └── mobile-nav.tsx
 │   │   ├── hooks/
-│   │   │   ├── use-notifications.ts
-│   │   │   ├── use-sources.ts
-│   │   │   └── use-realtime.ts
+│   │   │   ├── use-supabase.ts   # Client Supabase
+│   │   │   ├── use-realtime.ts   # Supabase Realtime
+│   │   │   └── use-auth.ts       # Supabase Auth
 │   │   ├── lib/
-│   │   │   ├── api.ts
-│   │   │   ├── socket.ts
+│   │   │   ├── supabase/
+│   │   │   │   ├── client.ts     # Client browser
+│   │   │   │   ├── server.ts     # Client server
+│   │   │   │   └── admin.ts      # Client admin
 │   │   │   └── utils.ts
-│   │   ├── stores/
-│   │   │   ├── alerts-store.ts
-│   │   │   └── user-store.ts
-│   │   ├── public/
-│   │   │   ├── icons/
-│   │   │   └── images/
-│   │   ├── next.config.js
-│   │   ├── tailwind.config.ts
-│   │   └── package.json
+│   │   └── ...
 │   │
-│   └── api/                      # Backend Express
+│   └── workers/                  # Workers (Railway)
 │       ├── src/
-│       │   ├── index.ts               # Entry point
-│       │   ├── config/
-│       │   │   ├── database.ts
-│       │   │   ├── redis.ts
-│       │   │   └── env.ts
-│       │   ├── routes/
-│       │   │   ├── auth.routes.ts
-│       │   │   ├── sources.routes.ts
-│       │   │   ├── alerts.routes.ts
-│       │   │   ├── media.routes.ts
-│       │   │   └── publish.routes.ts
-│       │   ├── controllers/
-│       │   │   ├── auth.controller.ts
-│       │   │   ├── sources.controller.ts
-│       │   │   ├── alerts.controller.ts
-│       │   │   └── publish.controller.ts
+│       │   ├── index.ts
+│       │   ├── jobs/
+│       │   │   ├── twitter.job.ts
+│       │   │   ├── rss.job.ts
+│       │   │   └── media.job.ts
 │       │   ├── services/
 │       │   │   ├── twitter.service.ts
-│       │   │   ├── scraper.service.ts
 │       │   │   ├── rss.service.ts
-│       │   │   ├── storage.service.ts
 │       │   │   └── notification.service.ts
-│       │   ├── workers/
-│       │   │   ├── twitter.worker.ts
-│       │   │   ├── scraper.worker.ts
-│       │   │   ├── rss.worker.ts
-│       │   │   └── media.worker.ts
-│       │   ├── middleware/
-│       │   │   ├── auth.middleware.ts
-│       │   │   ├── rate-limit.middleware.ts
-│       │   │   └── error.middleware.ts
-│       │   ├── utils/
-│       │   │   ├── logger.ts
-│       │   │   └── helpers.ts
-│       │   └── types/
-│       │       └── index.ts
-│       ├── prisma/
-│       │   ├── schema.prisma
-│       │   └── migrations/
+│       │   └── lib/
+│       │       ├── supabase.ts
+│       │       ├── redis.ts
+│       │       └── queue.ts
 │       └── package.json
 │
 ├── packages/
-│   └── shared/                   # Code partagé
-│       ├── types/
-│       │   └── index.ts
-│       ├── validators/
-│       │   └── index.ts
-│       └── constants/
-│           └── index.ts
+│   └── shared/
+│       └── types/
 │
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── API.md
-│   ├── DATABASE.md
-│   └── DEPLOYMENT.md
+├── supabase/
+│   ├── migrations/               # Migrations SQL
+│   └── seed.sql                  # Données de test
 │
-├── docker-compose.yml
+├── docker-compose.yml            # Pour dev local (optionnel)
 ├── package.json
-├── pnpm-workspace.yaml
-└── README.md
+└── pnpm-workspace.yaml
+```
+
+---
+
+## 🔐 Authentification avec Supabase
+
+### Méthodes disponibles (incluses gratuitement)
+
+- ✅ Email + Password
+- ✅ Magic Link (connexion par email)
+- ✅ OAuth (Google, GitHub, Twitter, Discord...)
+- ✅ 2FA / TOTP
+- ✅ Password recovery
+
+### Exemple de code
+
+```typescript
+// lib/supabase/client.ts
+import { createBrowserClient } from '@supabase/ssr'
+
+export const createClient = () =>
+  createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
+// Utilisation dans un composant
+const supabase = createClient()
+
+// Inscription
+const { data, error } = await supabase.auth.signUp({
+  email: 'user@example.com',
+  password: 'password123',
+  options: {
+    data: {
+      name: 'John Doe',
+      organization_name: 'Mon Équipe'
+    }
+  }
+})
+
+// Connexion
+const { data, error } = await supabase.auth.signInWithPassword({
+  email: 'user@example.com',
+  password: 'password123'
+})
+
+// OAuth (Google)
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: `${window.location.origin}/auth/callback`
+  }
+})
+
+// Déconnexion
+await supabase.auth.signOut()
+```
+
+---
+
+## 📡 Realtime avec Supabase
+
+### Écouter les nouvelles alertes
+
+```typescript
+// hooks/use-realtime.ts
+import { useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
+
+export function useAlertsRealtime(organizationId: string, onNewAlert: (alert: Alert) => void) {
+  useEffect(() => {
+    const supabase = createClient()
+
+    const channel = supabase
+      .channel('alerts-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Alert',
+          filter: `source.organizationId=eq.${organizationId}`
+        },
+        (payload) => {
+          onNewAlert(payload.new as Alert)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [organizationId, onNewAlert])
+}
+```
+
+---
+
+## 📦 Storage avec Supabase
+
+### Upload de médias
+
+```typescript
+// Télécharger une image depuis une URL et la stocker
+async function storeMedia(alertId: string, imageUrl: string) {
+  const supabase = createClient()
+
+  // Télécharger l'image
+  const response = await fetch(imageUrl)
+  const blob = await response.blob()
+
+  // Upload vers Supabase Storage
+  const fileName = `alerts/${alertId}/${Date.now()}.jpg`
+  const { data, error } = await supabase.storage
+    .from('media')
+    .upload(fileName, blob, {
+      contentType: 'image/jpeg',
+      upsert: false
+    })
+
+  if (error) throw error
+
+  // Obtenir l'URL publique
+  const { data: urlData } = supabase.storage
+    .from('media')
+    .getPublicUrl(fileName)
+
+  return urlData.publicUrl
+}
+```
+
+---
+
+## ⚡ Workers avec BullMQ + Upstash
+
+### Configuration de la queue
+
+```typescript
+// workers/src/lib/queue.ts
+import { Queue, Worker } from 'bullmq'
+import { Redis } from '@upstash/redis'
+
+const connection = {
+  host: process.env.UPSTASH_REDIS_HOST,
+  port: 6379,
+  password: process.env.UPSTASH_REDIS_PASSWORD,
+  tls: {}
+}
+
+// Queue pour Twitter
+export const twitterQueue = new Queue('twitter-monitoring', { connection })
+
+// Worker Twitter
+export const twitterWorker = new Worker(
+  'twitter-monitoring',
+  async (job) => {
+    const { sourceId } = job.data
+    // ... logique de vérification Twitter
+  },
+  { connection, concurrency: 5 }
+)
+```
+
+### Ajouter un job récurrent
+
+```typescript
+// Vérifier une source toutes les 60 secondes
+await twitterQueue.add(
+  'check-source',
+  { sourceId: 'xxx' },
+  {
+    repeat: {
+      every: 60000 // 60 secondes
+    },
+    jobId: `twitter-${sourceId}`
+  }
+)
 ```
 
 ---
@@ -289,37 +441,30 @@ self.addEventListener('notificationclick', (event) => {
 
 ---
 
-## 🔌 WebSocket Events
-
-### Client → Server
-```
-subscribe:alerts          # S'abonner aux alertes temps réel
-unsubscribe:alerts        # Se désabonner
-```
-
-### Server → Client
-```
-alert:new                 # Nouvelle alerte détectée
-alert:updated             # Alerte mise à jour
-source:status             # Changement statut source
-publish:result            # Résultat publication
-```
-
----
-
 ## 📝 Notes importantes
 
-### Limitations Instagram/TikTok
-Les APIs officielles ne permettent pas de surveiller facilement des comptes publics. Options :
-1. **Scraping** via Puppeteer/Browserless
-2. **Services tiers** comme Apify, Bright Data
-3. **RSS alternatifs** (Bibliogram, Proxigram)
+### Limites Twitter API Basic (100$/mois)
 
-### Rate Limits Twitter
-- API v2 Basic (100$/mois) : 10,000 tweets/mois en lecture
-- Système de cache et priorisation des sources nécessaire
+| Ressource | Limite | Capacité estimée |
+|-----------|--------|------------------|
+| Lecture | 10 000 tweets/mois | ~50-60 comptes Twitter |
+| Écriture | 1 500 tweets/mois | ~50 publications/jour |
+| Historique | 7 jours | Pas de vieux tweets |
 
-### Stockage des médias
-- Politique de rétention recommandée : 30-90 jours
-- Compression des images avant stockage
-- Les vidéos peuvent être volumineuses (prévoir l'espace)
+### Supabase Free vs Pro
+
+| Fonctionnalité | Free | Pro (25$) |
+|----------------|------|-----------|
+| Base de données | 500 MB | 8 GB |
+| Storage | 1 GB | 100 GB |
+| Pause inactivité | Après 7 jours | Jamais |
+| Backups | Non | Quotidiens |
+| Support | Community | Email |
+
+### Upstash Redis Free vs Pro
+
+| Fonctionnalité | Free | Pro (10$) |
+|----------------|------|-----------|
+| Commandes | 10K/jour | Illimité |
+| Stockage | 256 MB | 1 GB+ |
+| Connexions | 100 | 1000 |

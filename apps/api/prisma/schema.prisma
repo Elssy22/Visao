@@ -1,5 +1,5 @@
 // Visao - Schema Prisma
-// Base de données PostgreSQL
+// Base de données PostgreSQL (Supabase)
 // Multi-tenant avec support White-label
 
 generator client {
@@ -7,8 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // Pour Supabase pooling
 }
 
 // ==================== ORGANISATIONS (Multi-tenant) ====================
@@ -20,7 +21,7 @@ model Organization {
 
   // White-label (Phase 2)
   customDomain  String?  @unique // "veille.agencex.com"
-  logo          String?  // URL du logo
+  logo          String?  // URL du logo (Supabase Storage)
   primaryColor  String?  @default("#3b82f6") // Couleur principale
   secondaryColor String? @default("#1e293b") // Couleur secondaire
 
@@ -33,14 +34,15 @@ model Organization {
   maxSources    Int      @default(3)
 
   // Relations
-  users         User[]
+  profiles      Profile[]
   sources       Source[]
   invitations   Invitation[]
   sourceSuggestions SourceSuggestion[]
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
+  @@map("organizations")
   @@index([slug])
   @@index([customDomain])
 }
@@ -52,35 +54,34 @@ enum Plan {
   ENTERPRISE  // Illimité - sur devis
 }
 
-// ==================== UTILISATEURS ====================
+// ==================== PROFILS UTILISATEURS ====================
+// Note: L'auth est gérée par Supabase Auth
+// Cette table étend les données de auth.users
 
-model User {
-  id            String    @id @default(cuid())
+model Profile {
+  id            String    @id // Même ID que auth.users
   email         String    @unique
-  password      String
-  name          String
+  name          String?
   role          UserRole  @default(EDITOR)
-  avatar        String?
-  isActive      Boolean   @default(true)
+  avatar        String?   // URL Supabase Storage
+  isActive      Boolean   @default(true) @map("is_active")
 
   // Appartenance à une organisation
-  organizationId String
+  organizationId String   @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Relations
-  alerts            Alert[]
+  alerts            Alert[]           @relation("AssignedAlerts")
   savedContents     SavedContent[]
   publications      Publication[]
   pushSubscriptions PushSubscription[]
   sourceSuggestions SourceSuggestion[]
 
-  // Tokens
-  refreshTokens     RefreshToken[]
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  lastLoginAt   DateTime? @map("last_login_at")
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?
-
+  @@map("profiles")
   @@index([organizationId])
   @@index([email])
 }
@@ -92,46 +93,36 @@ enum UserRole {
   VIEWER  // Peut uniquement consulter le feed
 }
 
-model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([token])
-}
-
 model Invitation {
   id             String   @id @default(cuid())
   email          String
   role           UserRole @default(EDITOR)
-  organizationId String
+  organizationId String   @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   token          String   @unique
-  expiresAt      DateTime
-  acceptedAt     DateTime?
+  expiresAt      DateTime @map("expires_at")
+  acceptedAt     DateTime? @map("accepted_at")
 
-  createdAt      DateTime @default(now())
+  createdAt      DateTime @default(now()) @map("created_at")
 
+  @@map("invitations")
   @@index([token])
   @@index([organizationId])
 }
 
 model PushSubscription {
   id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId String   @map("profile_id")
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   endpoint  String   @unique
   keys      Json     // { p256dh, auth }
-  userAgent String?
+  userAgent String?  @map("user_agent")
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId])
+  @@map("push_subscriptions")
+  @@index([profileId])
 }
 
 // ==================== SOURCES ====================
@@ -142,24 +133,25 @@ model Source {
   type          SourceType
   url           String      // URL ou identifiant (@username, etc.)
   identifier    String?     // ID spécifique à la plateforme
-  isActive      Boolean     @default(true)
-  checkInterval Int         @default(60) // Intervalle en secondes
-  lastCheckedAt DateTime?
-  lastError     String?     // Dernière erreur de fetch
+  isActive      Boolean     @default(true) @map("is_active")
+  checkInterval Int         @default(60) @map("check_interval") // Intervalle en secondes
+  lastCheckedAt DateTime?   @map("last_checked_at")
+  lastError     String?     @map("last_error") // Dernière erreur de fetch
 
   // Métadonnées de la source
   metadata      Json?       // Avatar, bio, followers, etc.
 
   // Appartenance à une organisation
-  organizationId String
+  organizationId String     @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Relations
   alerts        Alert[]
 
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
 
+  @@map("sources")
   @@unique([organizationId, type, identifier])
   @@index([type, isActive])
   @@index([organizationId])
@@ -179,11 +171,11 @@ model SourceSuggestion {
   id             String   @id @default(cuid())
 
   // Qui propose
-  userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId      String   @map("profile_id")
+  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   // Organisation concernée
-  organizationId String
+  organizationId String   @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // La source proposée
@@ -194,14 +186,15 @@ model SourceSuggestion {
 
   // Statut
   status         SuggestionStatus @default(PENDING)
-  reviewedById   String?  // Admin qui a review
-  reviewNote     String?  // "Doublon" ou "Pas pertinent"
+  reviewedById   String?  @map("reviewed_by_id") // Admin qui a review
+  reviewNote     String?  @map("review_note") // "Doublon" ou "Pas pertinent"
 
-  createdAt      DateTime @default(now())
-  reviewedAt     DateTime?
+  createdAt      DateTime @default(now()) @map("created_at")
+  reviewedAt     DateTime? @map("reviewed_at")
 
+  @@map("source_suggestions")
   @@index([organizationId, status])
-  @@index([userId])
+  @@index([profileId])
 }
 
 enum SuggestionStatus {
@@ -214,15 +207,15 @@ enum SuggestionStatus {
 
 model Alert {
   id           String      @id @default(cuid())
-  sourceId     String
+  sourceId     String      @map("source_id")
   source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   // Contenu original
-  externalId   String      // ID du post sur la plateforme
+  externalId   String      @map("external_id") // ID du post sur la plateforme
   content      String      @db.Text
-  authorName   String
-  authorHandle String
-  authorAvatar String?
+  authorName   String      @map("author_name")
+  authorHandle String      @map("author_handle")
+  authorAvatar String?     @map("author_avatar")
   permalink    String      // Lien vers le post original
 
   // Médias
@@ -230,20 +223,21 @@ model Alert {
 
   // Statut
   status       AlertStatus @default(NEW)
-  isRead       Boolean     @default(false)
-  isPinned     Boolean     @default(false)
+  isRead       Boolean     @default(false) @map("is_read")
+  isPinned     Boolean     @default(false) @map("is_pinned")
 
   // Assignation (optionnel - pour le travail d'équipe)
-  assignedToId String?
-  assignedTo   User?       @relation(fields: [assignedToId], references: [id])
+  assignedToId String?     @map("assigned_to_id")
+  assignedTo   Profile?    @relation("AssignedAlerts", fields: [assignedToId], references: [id])
 
   // Relations
   savedContent SavedContent?
   publications Publication[]
 
-  detectedAt   DateTime    @default(now())
-  postedAt     DateTime    // Date du post original
+  detectedAt   DateTime    @default(now()) @map("detected_at")
+  postedAt     DateTime    @map("posted_at") // Date du post original
 
+  @@map("alerts")
   @@unique([sourceId, externalId])
   @@index([status, detectedAt])
   @@index([sourceId])
@@ -260,12 +254,12 @@ enum AlertStatus {
 
 model Media {
   id          String    @id @default(cuid())
-  alertId     String
+  alertId     String    @map("alert_id")
   alert       Alert     @relation(fields: [alertId], references: [id], onDelete: Cascade)
 
   type        MediaType
-  originalUrl String
-  storedUrl   String?   // URL après stockage local (R2)
+  originalUrl String    @map("original_url")
+  storedUrl   String?   @map("stored_url") // URL Supabase Storage
   thumbnail   String?
 
   // Métadonnées
@@ -274,8 +268,9 @@ model Media {
   duration    Int?      // Pour les vidéos (en secondes)
   size        Int?      // Taille en bytes
 
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now()) @map("created_at")
 
+  @@map("media")
   @@index([alertId])
 }
 
@@ -289,44 +284,46 @@ enum MediaType {
 
 model SavedContent {
   id        String   @id @default(cuid())
-  alertId   String   @unique
+  alertId   String   @unique @map("alert_id")
   alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  profileId String   @map("profile_id")
+  profile   Profile  @relation(fields: [profileId], references: [id])
 
   notes     String?  @db.Text
   tags      String[] // Tags personnalisés
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId, createdAt])
+  @@map("saved_contents")
+  @@index([profileId, createdAt])
 }
 
 // ==================== PUBLICATIONS ====================
 
 model Publication {
   id          String            @id @default(cuid())
-  alertId     String?
+  alertId     String?           @map("alert_id")
   alert       Alert?            @relation(fields: [alertId], references: [id])
-  userId      String
-  user        User              @relation(fields: [userId], references: [id])
+  profileId   String            @map("profile_id")
+  profile     Profile           @relation(fields: [profileId], references: [id])
 
   platform    PublishPlatform
   content     String            @db.Text
-  mediaUrls   String[]
+  mediaUrls   String[]          @map("media_urls")
 
   // Résultat
   status      PublishStatus     @default(PENDING)
-  externalId  String?           // ID du tweet publié
-  externalUrl String?           // URL du tweet
+  externalId  String?           @map("external_id") // ID du tweet publié
+  externalUrl String?           @map("external_url") // URL du tweet
   error       String?
 
-  scheduledAt DateTime?
-  publishedAt DateTime?
-  createdAt   DateTime          @default(now())
+  scheduledAt DateTime?         @map("scheduled_at")
+  publishedAt DateTime?         @map("published_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
 
-  @@index([userId, status])
-  @@index([userId, createdAt])
+  @@map("publications")
+  @@index([profileId, status])
+  @@index([profileId, createdAt])
 }
 
 enum PublishPlatform {
@@ -347,10 +344,11 @@ model Competitor {
   name           String
   handle         String   // @username sur X
   url            String?  // Site web
-  organizationId String   // Appartient à une organisation
+  organizationId String   @map("organization_id")
 
-  createdAt      DateTime @default(now())
+  createdAt      DateTime @default(now()) @map("created_at")
 
+  @@map("competitors")
   @@index([organizationId])
 }
 
@@ -360,25 +358,28 @@ model SystemConfig {
   id        String   @id @default(cuid())
   key       String   @unique
   value     Json
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_config")
 }
 
-// ==================== AUDIT LOG (optionnel mais recommandé) ====================
+// ==================== AUDIT LOG ====================
 
 model AuditLog {
   id             String   @id @default(cuid())
-  userId         String?
-  organizationId String?
+  profileId      String?  @map("profile_id")
+  organizationId String?  @map("organization_id")
   action         String   // "source.created", "alert.published", etc.
-  entityType     String?  // "Source", "Alert", "User"
-  entityId       String?
+  entityType     String?  @map("entity_type") // "Source", "Alert", "Profile"
+  entityId       String?  @map("entity_id")
   metadata       Json?    // Détails supplémentaires
-  ipAddress      String?
-  userAgent      String?
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
 
-  createdAt      DateTime @default(now())
+  createdAt      DateTime @default(now()) @map("created_at")
 
+  @@map("audit_logs")
   @@index([organizationId, createdAt])
-  @@index([userId, createdAt])
+  @@index([profileId, createdAt])
   @@index([action])
 }
