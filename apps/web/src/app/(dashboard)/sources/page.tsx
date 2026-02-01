@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus,
   Search,
@@ -25,11 +25,20 @@ import {
   Play,
   Trash2,
   ExternalLink,
+  Loader2,
 } from 'lucide-react'
-import type { Source, SourceType } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
+import type { SourceType } from '@/types/database'
 
-// Données mockées pour le moment
-const mockSources: Source[] = []
+interface Source {
+  id: string
+  name: string
+  type: SourceType
+  url: string
+  isActive: boolean
+  lastCheckedAt: string | null
+  lastError: string | null
+}
 
 const sourceTypeConfig: Record<SourceType, { icon: typeof Twitter; label: string; color: string }> = {
   TWITTER: { icon: Twitter, label: 'Twitter', color: 'bg-blue-500' },
@@ -40,9 +49,72 @@ const sourceTypeConfig: Record<SourceType, { icon: typeof Twitter; label: string
 }
 
 export default function SourcesPage() {
-  const [sources] = useState<Source[]>(mockSources)
+  const [sources, setSources] = useState<Source[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState('all')
+
+  const supabase = createClient()
+
+  const loadSources = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sources')
+        .select('id, name, type, url, is_active, last_checked_at, last_error')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error loading sources:', error)
+        return
+      }
+
+      const formattedSources: Source[] = (data || []).map(s => ({
+        id: s.id,
+        name: s.name,
+        type: s.type as SourceType,
+        url: s.url,
+        isActive: s.is_active,
+        lastCheckedAt: s.last_checked_at,
+        lastError: s.last_error,
+      }))
+
+      setSources(formattedSources)
+    } catch (err) {
+      console.error('Error:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSources()
+  }, [])
+
+  const handleToggleActive = async (source: Source) => {
+    const { error } = await supabase
+      .from('sources')
+      .update({ is_active: !source.isActive })
+      .eq('id', source.id)
+
+    if (!error) {
+      setSources(prev => prev.map(s =>
+        s.id === source.id ? { ...s, isActive: !s.isActive } : s
+      ))
+    }
+  }
+
+  const handleDelete = async (sourceId: string) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette source ?')) return
+
+    const { error } = await supabase
+      .from('sources')
+      .delete()
+      .eq('id', sourceId)
+
+    if (!error) {
+      setSources(prev => prev.filter(s => s.id !== sourceId))
+    }
+  }
 
   const filteredSources = sources.filter((source) => {
     const matchesSearch = source.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -50,6 +122,14 @@ export default function SourcesPage() {
     const matchesTab = activeTab === 'all' || source.type.toLowerCase() === activeTab
     return matchesSearch && matchesTab
   })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -60,7 +140,7 @@ export default function SourcesPage() {
             Sources
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Gérez les sources que vous surveillez
+            {sources.length} source{sources.length > 1 ? 's' : ''} configurée{sources.length > 1 ? 's' : ''}
           </p>
         </div>
         <Button asChild>
@@ -87,7 +167,7 @@ export default function SourcesPage() {
             <TabsTrigger value="all">Toutes</TabsTrigger>
             <TabsTrigger value="twitter">Twitter</TabsTrigger>
             <TabsTrigger value="rss">RSS</TabsTrigger>
-            <TabsTrigger value="instagram">Instagram</TabsTrigger>
+            <TabsTrigger value="website">Sites</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -114,7 +194,12 @@ export default function SourcesPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredSources.map((source) => (
-            <SourceCard key={source.id} source={source} />
+            <SourceCard
+              key={source.id}
+              source={source}
+              onToggleActive={() => handleToggleActive(source)}
+              onDelete={() => handleDelete(source.id)}
+            />
           ))}
         </div>
       )}
@@ -122,9 +207,29 @@ export default function SourcesPage() {
   )
 }
 
-function SourceCard({ source }: { source: Source }) {
+function SourceCard({
+  source,
+  onToggleActive,
+  onDelete
+}: {
+  source: Source
+  onToggleActive: () => void
+  onDelete: () => void
+}) {
   const config = sourceTypeConfig[source.type]
   const Icon = config.icon
+
+  const formatLastChecked = (dateStr: string | null) => {
+    if (!dateStr) return 'Jamais vérifié'
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const minutes = Math.floor(diff / 60000)
+
+    if (minutes < 1) return 'À l\'instant'
+    if (minutes < 60) return `Il y a ${minutes}min`
+    return `Il y a ${Math.floor(minutes / 60)}h`
+  }
 
   return (
     <Card>
@@ -147,11 +252,11 @@ function SourceCard({ source }: { source: Source }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.open(source.url, '_blank')}>
               <ExternalLink className="h-4 w-4 mr-2" />
               Voir la source
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleActive}>
               {source.isActive ? (
                 <>
                   <Pause className="h-4 w-4 mr-2" />
@@ -164,7 +269,7 @@ function SourceCard({ source }: { source: Source }) {
                 </>
               )}
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-red-600">
+            <DropdownMenuItem className="text-red-600" onClick={onDelete}>
               <Trash2 className="h-4 w-4 mr-2" />
               Supprimer
             </DropdownMenuItem>
@@ -177,12 +282,12 @@ function SourceCard({ source }: { source: Source }) {
             <Badge variant={source.isActive ? 'default' : 'secondary'}>
               {source.isActive ? 'Active' : 'En pause'}
             </Badge>
-            <Badge variant="outline">{config.label}</Badge>
+            {source.lastError && (
+              <Badge variant="destructive" className="text-xs">Erreur</Badge>
+            )}
           </div>
           <span className="text-xs text-slate-500">
-            {source.lastCheckedAt
-              ? `Vérifié ${new Date(source.lastCheckedAt).toLocaleTimeString()}`
-              : 'Jamais vérifié'}
+            {formatLastChecked(source.lastCheckedAt)}
           </span>
         </div>
       </CardContent>

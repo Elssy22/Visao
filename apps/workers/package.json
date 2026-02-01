@@ -1,0 +1,29 @@
+{
+  "name": "visao-workers",
+  "version": "0.1.0",
+  "description": "Background workers for Visao - RSS and Twitter monitoring",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "@upstash/redis": "^1.34.0",
+    "bullmq": "^5.12.0",
+    "dotenv": "^16.4.5",
+    "rss-parser": "^3.13.0",
+    "twitter-api-v2": "^1.17.0",
+    "web-push": "^3.6.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/web-push": "^3.6.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

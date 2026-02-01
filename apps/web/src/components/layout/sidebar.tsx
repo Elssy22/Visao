@@ -6,17 +6,21 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
   Rss,
-  Bell,
+  Newspaper,
   Bookmark,
+  XCircle,
   Settings,
   PlusCircle,
+  Users,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Feed', href: '/feed', icon: Newspaper },
   { name: 'Sources', href: '/sources', icon: Rss },
-  { name: 'Alertes', href: '/alerts', icon: Bell },
   { name: 'Sauvegardés', href: '/saved', icon: Bookmark },
+  { name: 'Refusées', href: '/dismissed', icon: XCircle },
+  { name: 'Équipe', href: '/team', icon: Users },
   { name: 'Paramètres', href: '/settings', icon: Settings },
 ]
 
